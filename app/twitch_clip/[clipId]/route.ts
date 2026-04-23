@@ -101,7 +101,7 @@ export async function GET(
     <html>
       <head>
           <meta property="charset" content="utf-8">
-          <meta property="theme-color" content="#B868F2">
+          <meta property="theme-color" content="#BB5CFF">
           <meta property="og:title" content="🎞️ ${escapeString(clipMetaData.broadcaster.displayName)} - ${escapeString(clipMetaData.title)}">
           <meta property="og:type" content="video">
           <meta property="og:site_name" content="👁️ Views: ${clipMetaData.viewCount} - test">
@@ -109,6 +109,7 @@ export async function GET(
           <meta property="og:video" content="${escapeString(authorizedVideoURL)}">
           <meta property="og:video:secure_url" content="${escapeString(authorizedVideoURL)}">
           <meta property="og:video:type" content="video/mp4">
+          <meta http-equiv='refresh' content='0; URL="${'https://clips.twitch.tv/' + clipId}"'>
       </head>
     </html>
     `,
