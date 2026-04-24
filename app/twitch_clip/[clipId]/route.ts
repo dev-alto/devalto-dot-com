@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server"
+import { NextResponse } from 'next/server'
 
 const requestNewTokenParams = new URLSearchParams({
   client_id: process.env.TWITCH_CLIENT_ID as string,
@@ -41,7 +41,7 @@ export async function GET(
   }
 
   // use graphql twitch endpoint
-  const requestClipMetaResponse = await fetch('https://gql.twitch.tv/gql', {
+  const requestGraphQClipMetaResponse = await fetch('https://gql.twitch.tv/gql', {
       method: 'POST',
       headers: [
           ['Client-ID', 'kimne78kx3ncx6brgo4mv6wki5h1ko'],
@@ -71,21 +71,27 @@ export async function GET(
           },
       ])
   })
+
+  const requestClipMetaData = await fetch(`https://api.twitch.tv/helix/clips?id=${clipId}`, {
+    headers: [['Client-Id', process.env.TWITCH_CLIENT_ID as string ], ['Authorization', `Bearer ${currentAccessToken}`]]
+  })
   
-  if (!requestClipMetaResponse.ok) {
-      return Response.json( { error: { message: 'Could not query clip information: ' + requestClipMetaResponse.statusText + ' - the API request to Twitch seems to have errored.' }} )
+  if (!requestGraphQClipMetaResponse.ok || !requestClipMetaData.ok) {
+      return Response.json( { error: { message: 'Could not query clip information: ' + requestGraphQClipMetaResponse.statusText + ' - the API request to Twitch seems to have errored.' }} )
   }
 
-  const requestClipMetaBody = await requestClipMetaResponse.json()
+  const requestGraphpQClipMetaBody = await requestGraphQClipMetaResponse.json()
+  const requestClipMetaBody = await requestClipMetaData.json()
+  const requestClipMetaBodyData = requestClipMetaBody.data[0]
 
-  if (!requestClipMetaBody[0].data.clip) {
+  if (!requestGraphpQClipMetaBody[0].data.clip) {
     return Response.json( { error: { message: `Could not query clip information. The provided clipId, "${clipId}" is likely invalid.` }} )
   }
 
-  console.log(JSON.stringify(requestClipMetaBody, null, 4))
+  console.log(JSON.stringify(requestGraphpQClipMetaBody, null, 4))
 
-  const clipMetaData = requestClipMetaBody[0].data.clip
-  const clipVideoPlaybackData = requestClipMetaBody[1].data.clip
+  const clipMetaData = requestGraphpQClipMetaBody[0].data.clip
+  const clipVideoPlaybackData = requestGraphpQClipMetaBody[1].data.clip
 
   const baseVideoURL = clipVideoPlaybackData.videoQualities[0].sourceURL
   console.log(baseVideoURL)
@@ -102,14 +108,17 @@ export async function GET(
       <head>
           <meta property="charset" content="utf-8">
           <meta property="theme-color" content="#BB5CFF">
-          <meta property="og:title" content="🎞️ ${escapeString(clipMetaData.broadcaster.displayName)} - ${escapeString(clipMetaData.title)}">
+          <meta property="og:title" content='🎞️ ${escapeString(clipMetaData.broadcaster.displayName)} - "${escapeString(clipMetaData.title)}"'>
           <meta property="og:type" content="video">
-          <meta property="og:site_name" content="👁️ Views: ${clipMetaData.viewCount} - test">
+
+          <meta property="og:site_name" content="👁️ ${clipMetaData.viewCount} views  ︱ ⏱️${requestClipMetaBodyData.duration}s ︱🎬 by (@${requestClipMetaBodyData.creator_name})">
           <meta property="og:url" content="${'https://clips.twitch.tv/' + clipId}">
+          
           <meta property="og:video" content="${escapeString(authorizedVideoURL)}">
           <meta property="og:video:secure_url" content="${escapeString(authorizedVideoURL)}">
           <meta property="og:video:type" content="video/mp4">
           <meta http-equiv='refresh' content='0; URL="${'https://clips.twitch.tv/' + clipId}"'>
+
       </head>
     </html>
     `,
