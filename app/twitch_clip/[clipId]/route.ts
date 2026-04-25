@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { type NextRequest } from 'next/server'
 
 const requestNewTokenParams = new URLSearchParams({
   client_id: process.env.TWITCH_CLIENT_ID as string,
@@ -17,10 +18,13 @@ const escapeString = function(string: string) {
 let currentAccessToken = ''
 
 export async function GET(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ clipId: string }> }
 ) {
   const { clipId } = await params
+  
+  const searchParams = request.nextUrl.searchParams
+  const stripped = searchParams.get('stripped')
 
   // first, verify if we have a valid access token to query API with
   const validationResponse = await fetch('https://id.twitch.tv/oauth2/validate', {
@@ -29,7 +33,7 @@ export async function GET(
 
   if (!validationResponse.ok) {
     const requestNewTokenResponse = await fetch(`https://id.twitch.tv/oauth2/token?${requestNewTokenParams}`, {
-      method: 'POST',
+      method: 'POST'
     })
 
     if (!requestNewTokenResponse.ok) {
@@ -42,34 +46,34 @@ export async function GET(
 
   // use graphql twitch endpoint
   const requestGraphQClipMetaResponse = await fetch('https://gql.twitch.tv/gql', {
-      method: 'POST',
-      headers: [
-          ['Client-ID', 'kimne78kx3ncx6brgo4mv6wki5h1ko'],
-          ['Authorization', `Bearer ${currentAccessToken}`],
-          ['Content-Type', 'application/json']
-      ],
-      body: JSON.stringify([
-          {
-              "operationName": "VideoPlayerStreamInfoOverlayClip",
-              "variables": {"slug": clipId},
-              "extensions": {
-                  "persistedQuery": {
-                      "version": 1,
-                      "sha256Hash": "fcefd8b2081e39d16cbdc94bc82142df01b143bb296f0043262c44c37dbd1f63",
-                  }
-              },
-          },
-          {
-              "operationName": "VideoAccessToken_Clip",
-              "variables": {"platform": "web", "slug": clipId},
-              "extensions": {
-                  "persistedQuery": {
-                      "version": 1,
-                      "sha256Hash": "6fd3af2b22989506269b9ac02dd87eb4a6688392d67d94e41a6886f1e9f5c00f",
-                  }
-              },
-          },
-      ])
+    method: 'POST',
+    headers: [
+      ['Client-ID', 'kimne78kx3ncx6brgo4mv6wki5h1ko'],
+      ['Authorization', `Bearer ${currentAccessToken}`],
+      ['Content-Type', 'application/json']
+    ],
+    body: JSON.stringify([
+      {
+        "operationName": "VideoPlayerStreamInfoOverlayClip",
+        "variables": {"slug": clipId},
+        "extensions": {
+            "persistedQuery": {
+                "version": 1,
+                "sha256Hash": "fcefd8b2081e39d16cbdc94bc82142df01b143bb296f0043262c44c37dbd1f63",
+            }
+        },
+      },
+      {
+        "operationName": "VideoAccessToken_Clip",
+        "variables": {"platform": "web", "slug": clipId},
+        "extensions": {
+            "persistedQuery": {
+                "version": 1,
+                "sha256Hash": "6fd3af2b22989506269b9ac02dd87eb4a6688392d67d94e41a6886f1e9f5c00f",
+            }
+        },
+      },
+    ])
   })
 
   const requestClipMetaData = await fetch(`https://api.twitch.tv/helix/clips?id=${clipId}`, {
@@ -104,23 +108,25 @@ export async function GET(
 
   return new NextResponse(
     `
-    <html>
-      <head>
+      <html>
+        <head>
           <meta property="charset" content="utf-8">
-          <meta property="theme-color" content="#BB5CFF">
-          <meta property="og:title" content='🎞️ ${escapeString(clipMetaData.broadcaster.displayName)} - "${escapeString(clipMetaData.title)}"'>
-          <meta property="og:type" content="video">
-
-          <meta property="og:site_name" content="👁️ ${clipMetaData.viewCount} views  ︱ ⏱️${requestClipMetaBodyData.duration}s ︱🎬 by (@${requestClipMetaBodyData.creator_name})">
+          <meta property="theme-color" content="#9045fb">
           <meta property="og:url" content="${'https://clips.twitch.tv/' + clipId}">
-          
+          <meta property="og:title" content='${escapeString(clipMetaData.broadcaster.displayName)} - "${escapeString(clipMetaData.title)}"'>
+
+          ${!stripped && `
+          <meta property="og:site_name" content="👁️ ${clipMetaData.viewCount} views ︱ ⏱️${requestClipMetaBodyData.duration}s ︱🎬 by (@${requestClipMetaBodyData.creator_name})">
+          `}
+
+          <meta property="og:type" content="video">
           <meta property="og:video" content="${escapeString(authorizedVideoURL)}">
           <meta property="og:video:secure_url" content="${escapeString(authorizedVideoURL)}">
           <meta property="og:video:type" content="video/mp4">
           <meta http-equiv='refresh' content='0; URL="${'https://clips.twitch.tv/' + clipId}"'>
-
-      </head>
-    </html>
+          
+        </head>
+      </html>
     `,
     { status: 200, headers: { 'content-type': 'text/html' }} 
   )
