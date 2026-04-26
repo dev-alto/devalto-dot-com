@@ -88,6 +88,10 @@ export async function GET(
   const requestClipMetaBody = await requestClipMetaData.json()
   const requestClipMetaBodyData = requestClipMetaBody.data[0]
 
+  console.log('helios clip data body:')
+  console.log(JSON.stringify(requestClipMetaBody, null, 4))
+
+  console.log('graphql data body:')
   console.log(JSON.stringify(requestGraphpQClipMetaBody, null, 4))
 
   if (!requestGraphpQClipMetaBody[0].data?.clip) {
