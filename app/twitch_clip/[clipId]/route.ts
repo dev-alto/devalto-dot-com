@@ -88,11 +88,11 @@ export async function GET(
   const requestClipMetaBody = await requestClipMetaData.json()
   const requestClipMetaBodyData = requestClipMetaBody.data[0]
 
-  if (!requestGraphpQClipMetaBody[0].data.clip) {
+  console.log(JSON.stringify(requestGraphpQClipMetaBody, null, 4))
+
+  if (!requestGraphpQClipMetaBody[0].data?.clip) {
     return Response.json( { error: { message: `Could not query clip information. The provided clipId, "${clipId}" is likely invalid.` }} )
   }
-
-  console.log(JSON.stringify(requestGraphpQClipMetaBody, null, 4))
 
   const clipMetaData = requestGraphpQClipMetaBody[0].data.clip
   const clipVideoPlaybackData = requestGraphpQClipMetaBody[1].data.clip
