@@ -54,16 +54,6 @@ export async function GET(
     ],
     body: JSON.stringify([
       {
-        "operationName": "VideoPlayerStreamInfoOverlayClip",
-        "variables": {"slug": clipId},
-        "extensions": {
-            "persistedQuery": {
-                "version": 1,
-                "sha256Hash": "fcefd8b2081e39d16cbdc94bc82142df01b143bb296f0043262c44c37dbd1f63",
-            }
-        },
-      },
-      {
         "operationName": "VideoAccessToken_Clip",
         "variables": {"platform": "web", "slug": clipId},
         "extensions": {
@@ -98,8 +88,7 @@ export async function GET(
     return Response.json( { error: { message: `Could not query clip information. The provided clipId, "${clipId}" is likely invalid.` }} )
   }
 
-  const clipMetaData = requestGraphpQClipMetaBody[0].data.clip
-  const clipVideoPlaybackData = requestGraphpQClipMetaBody[1].data.clip
+  const clipVideoPlaybackData = requestGraphpQClipMetaBody[0].data.clip
 
   const baseVideoURL = clipVideoPlaybackData.videoQualities[0].sourceURL
   console.log(baseVideoURL)
@@ -117,18 +106,17 @@ export async function GET(
           <meta property="charset" content="utf-8">
           <meta property="theme-color" content="#9045fb">
           <meta property="og:url" content="${'https://clips.twitch.tv/' + clipId}">
-          <meta property="og:title" content='${escapeString(clipMetaData.broadcaster.displayName)} - "${escapeString(clipMetaData.title)}"'>
-
+          <meta property="og:title" content='${escapeString(requestClipMetaBodyData.broadcaster_name)} - "${escapeString(requestClipMetaBodyData.title)}"'>
           ${!stripped && `
-          <meta property="og:site_name" content="👁️ ${clipMetaData.viewCount} views ︱ ⏱️${requestClipMetaBodyData.duration}s ︱🎬 by (@${requestClipMetaBodyData.creator_name})">
+          <meta property="og:site_name" content="👁️ ${requestClipMetaBodyData.view_count} views ︱ ⏱️${requestClipMetaBodyData.duration}s ︱🎬 by (@${requestClipMetaBodyData.creator_name})">
           `}
-
           <meta property="og:type" content="video">
           <meta property="og:video" content="${escapeString(authorizedVideoURL)}">
           <meta property="og:video:secure_url" content="${escapeString(authorizedVideoURL)}">
           <meta property="og:video:type" content="video/mp4">
           <meta http-equiv='refresh' content='0; URL="${'https://clips.twitch.tv/' + clipId}"'>
           
+          <meta http-equiv='refresh' content='0; URL="${'https://clips.twitch.tv/' + clipId}"'>
         </head>
       </html>
     `,
