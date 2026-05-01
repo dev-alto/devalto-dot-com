@@ -108,7 +108,7 @@ export async function GET(
           <meta property="og:url" content="${'https://clips.twitch.tv/' + clipId}">
           <meta property="og:title" content='${escapeString(requestClipMetaBodyData.broadcaster_name)} - "${escapeString(requestClipMetaBodyData.title)}"'>
           ${!stripped && `
-          <meta property="og:site_name" content="👁️ ${requestClipMetaBodyData.view_count} views ︱ ⏱️${requestClipMetaBodyData.duration}s ︱🎬 by (@${requestClipMetaBodyData.creator_name})">
+          <meta property="og:site_name" content="👁️ ${requestClipMetaBodyData.view_count} view(s) ︱ ⏱️${requestClipMetaBodyData.duration}s ︱🎬 by (@${requestClipMetaBodyData.creator_name})">
           `}
           <meta property="og:type" content="video">
           <meta property="og:video" content="${escapeString(authorizedVideoURL)}">
