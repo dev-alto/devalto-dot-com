@@ -1,10 +1,21 @@
 import { NextResponse } from 'next/server'
 import { type NextRequest } from 'next/server'
 
+import { Client as MinioClient } from 'minio'
+
 const requestNewTokenParams = new URLSearchParams({
   client_id: process.env.TWITCH_CLIENT_ID as string,
   client_secret: process.env.TWITCH_CLIENT_SECRET as string,
   grant_type: 'client_credentials',
+})
+
+const minioClient = new MinioClient({
+  endPoint: process.env.S3_STORAGE_ENDPOINT as string,
+  region: 'garage',
+  pathStyle: true,
+  useSSL: true,
+  accessKey: process.env.S3_STORAGE_ACCESS_KEY as string,
+  secretKey: process.env.S3_STORAGE_SECRET_KEY as string,
 })
 
 const escapeString = function(string: string) { 
@@ -99,6 +110,15 @@ export async function GET(
   const authorizedVideoURL = `${baseVideoURL}?sig=${playbackAccessToken.signature}&token=${encodeURI(playbackAccessToken.value)}`
   console.log(authorizedVideoURL)
 
+
+  const clipFile = await fetch(authorizedVideoURL)
+
+  const buffer = Buffer.from(await clipFile.arrayBuffer())
+
+  const destinationObject = `${clipId}.mp4`
+
+  await minioClient.putObject('twitch-clips', destinationObject, buffer, buffer.byteLength)
+
   return new NextResponse(
     `
       <html>
@@ -111,8 +131,8 @@ export async function GET(
           <meta property="og:site_name" content="👁️ ${requestClipMetaBodyData.view_count} view${requestClipMetaBodyData.view_count !== 1 ? 's' : ''} ︱ ⏱️${requestClipMetaBodyData.duration}s ︱🎬 by (@${requestClipMetaBodyData.creator_name})">
           `}
           <meta property="og:type" content="video">
-          <meta property="og:video" content="${escapeString(authorizedVideoURL)}">
-          <meta property="og:video:secure_url" content="${escapeString(authorizedVideoURL)}">
+          <meta property="og:video" content="${escapeString(process.env.S3_STORAGE_CLIPS_WEB_ENDPOINT + destinationObject)}">
+          <meta property="og:video:secure_url" content="${escapeString(process.env.S3_STORAGE_CLIPS_WEB_ENDPOINT + destinationObject)}">
           <meta property="og:video:type" content="video/mp4">
           <meta http-equiv='refresh' content='0; URL="${'https://clips.twitch.tv/' + clipId}"'>
           
