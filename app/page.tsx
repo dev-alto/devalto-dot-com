@@ -5,5 +5,5 @@ export default function Home() {
         {`it's quiet in here...`}
       </main>
     </div>
-  );
+  )
 }
