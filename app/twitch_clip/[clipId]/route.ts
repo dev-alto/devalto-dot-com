@@ -3,6 +3,8 @@ import { type NextRequest } from 'next/server'
 
 import { Client as MinioClient } from 'minio'
 
+const CLIPS_BUCKET_NAME = 'twitch-clips'
+
 const requestNewTokenParams = new URLSearchParams({
   client_id: process.env.TWITCH_CLIENT_ID as string,
   client_secret: process.env.TWITCH_CLIENT_SECRET as string,
@@ -18,6 +20,7 @@ const minioClient = new MinioClient({
   secretKey: process.env.S3_STORAGE_SECRET_KEY as string,
 })
 
+// look into just using url encoding
 const escapeString = function(string: string) { 
   return string
     .replace(/</g, '&lt;')
@@ -38,6 +41,8 @@ export async function GET(
   const stripped = searchParams.get('stripped')
 
   // first, verify if we have a valid access token to query API with
+  const bmark_1 = performance.now()
+
   const validationResponse = await fetch('https://id.twitch.tv/oauth2/validate', {
     headers: [['Authorization', `Bearer ${currentAccessToken}`]]
   })
@@ -55,69 +60,94 @@ export async function GET(
     currentAccessToken = bodyRequestNewToken.access_token
   }
 
-  // use graphql twitch endpoint
-  const requestGraphQClipMetaResponse = await fetch('https://gql.twitch.tv/gql', {
-    method: 'POST',
-    headers: [
-      ['Client-ID', 'kimne78kx3ncx6brgo4mv6wki5h1ko'],
-      ['Authorization', `Bearer ${currentAccessToken}`],
-      ['Content-Type', 'application/json']
-    ],
-    body: JSON.stringify([
-      {
-        "operationName": "VideoAccessToken_Clip",
-        "variables": {"platform": "web", "slug": clipId},
-        "extensions": {
-            "persistedQuery": {
-                "version": 1,
-                "sha256Hash": "6fd3af2b22989506269b9ac02dd87eb4a6688392d67d94e41a6886f1e9f5c00f",
-            }
-        },
-      },
-    ])
-  })
-
   const requestClipMetaData = await fetch(`https://api.twitch.tv/helix/clips?id=${clipId}`, {
     headers: [['Client-Id', process.env.TWITCH_CLIENT_ID as string ], ['Authorization', `Bearer ${currentAccessToken}`]]
   })
-  
-  if (!requestGraphQClipMetaResponse.ok || !requestClipMetaData.ok) {
-      return Response.json( { error: { message: 'Could not query clip information: ' + requestGraphQClipMetaResponse.statusText + ' - the API request to Twitch seems to have errored.' }} )
-  }
 
-  const requestGraphpQClipMetaBody = await requestGraphQClipMetaResponse.json()
   const requestClipMetaBody = await requestClipMetaData.json()
   const requestClipMetaBodyData = requestClipMetaBody.data[0]
 
-  console.log('helios clip data body:')
-  console.log(JSON.stringify(requestClipMetaBody, null, 4))
+  // console.log('b1: ' + (performance.now() - bmark_1))
 
-  console.log('graphql data body:')
-  console.log(JSON.stringify(requestGraphpQClipMetaBody, null, 4))
+  const expectedObjectClipName = `${clipId}.mp4`
 
-  if (!requestGraphpQClipMetaBody[0].data?.clip) {
-    return Response.json( { error: { message: `Could not query clip information. The provided clipId, "${clipId}" is likely invalid.` }} )
+  try {
+
+    // check to see if clip is already kept in object storage
+    const objectClip = await minioClient.getObject(CLIPS_BUCKET_NAME, expectedObjectClipName)
+
+    if (!objectClip.readable) {
+
+    // use graphql twitch endpoint
+      const requestGraphQClipMetaResponse = await fetch('https://gql.twitch.tv/gql', {
+        method: 'POST',
+        headers: [
+          ['Client-ID', 'kimne78kx3ncx6brgo4mv6wki5h1ko'],
+          ['Authorization', `Bearer ${currentAccessToken}`],
+          ['Content-Type', 'application/json']
+        ],
+        body: JSON.stringify([
+          {
+            'operationName': 'VideoAccessToken_Clip',
+            'variables': {'platform': 'web', 'slug': clipId},
+            'extensions': {
+                'persistedQuery': {
+                    'version': 1,
+                    'sha256Hash': '6fd3af2b22989506269b9ac02dd87eb4a6688392d67d94e41a6886f1e9f5c00f',
+                }
+            },
+          },
+        ])
+      })
+
+      console.log('b2: ' + (performance.now() - bmark_1))
+      
+      if (!requestGraphQClipMetaResponse.ok || !requestClipMetaData.ok) {
+          return Response.json( { error: { message: 'Could not query clip information: ' + requestGraphQClipMetaResponse.statusText + ' - the API request to Twitch seems to have errored.' }} )
+      }
+
+      const requestGraphpQClipMetaBody = await requestGraphQClipMetaResponse.json()
+
+      console.log('helios clip data body:')
+      console.log(JSON.stringify(requestClipMetaBody, null, 4))
+
+      console.log('graphql data body:')
+      console.log(JSON.stringify(requestGraphpQClipMetaBody, null, 4))
+
+      if (!requestGraphpQClipMetaBody[0].data?.clip) {
+        return Response.json( { error: { message: `Could not query clip information. The provided clipId, "${clipId}" is likely invalid.` }} )
+      }
+
+      console.log('b3: ' + (performance.now() - bmark_1))
+
+      const clipVideoPlaybackData = requestGraphpQClipMetaBody[0].data.clip
+
+      const baseVideoURL = clipVideoPlaybackData.videoQualities[0].sourceURL
+      console.log(baseVideoURL)
+
+      const playbackAccessToken = clipVideoPlaybackData.playbackAccessToken
+      console.log(playbackAccessToken)
+
+      const authorizedVideoURL = `${baseVideoURL}?sig=${playbackAccessToken.signature}&token=${encodeURI(playbackAccessToken.value)}`
+      console.log(authorizedVideoURL)
+
+      const twitchMediaFile = await fetch(authorizedVideoURL)
+
+      const twitchMediaBuffer = Buffer.from(await twitchMediaFile.arrayBuffer())
+
+      console.log('b4: ' + (performance.now() - bmark_1))
+
+      await minioClient.putObject(CLIPS_BUCKET_NAME, expectedObjectClipName, twitchMediaBuffer, twitchMediaBuffer.byteLength)
+    } else {
+      console.log('cache hit!')
+    }
+  } catch(err) {
+    console.log(err)
   }
 
-  const clipVideoPlaybackData = requestGraphpQClipMetaBody[0].data.clip
+  const storageWebLink = escapeString(process.env.S3_STORAGE_CLIPS_WEB_ENDPOINT + expectedObjectClipName)
 
-  const baseVideoURL = clipVideoPlaybackData.videoQualities[0].sourceURL
-  console.log(baseVideoURL)
-
-  const playbackAccessToken = clipVideoPlaybackData.playbackAccessToken
-  console.log(playbackAccessToken)
-
-  const authorizedVideoURL = `${baseVideoURL}?sig=${playbackAccessToken.signature}&token=${encodeURI(playbackAccessToken.value)}`
-  console.log(authorizedVideoURL)
-
-
-  const clipFile = await fetch(authorizedVideoURL)
-
-  const buffer = Buffer.from(await clipFile.arrayBuffer())
-
-  const destinationObject = `${clipId}.mp4`
-
-  await minioClient.putObject('twitch-clips', destinationObject, buffer, buffer.byteLength)
+  console.log('b6: ' + (performance.now() - bmark_1))
 
   return new NextResponse(
     `
@@ -131,8 +161,8 @@ export async function GET(
           <meta property="og:site_name" content="👁️ ${requestClipMetaBodyData.view_count} view${requestClipMetaBodyData.view_count !== 1 ? 's' : ''} ︱ ⏱️${requestClipMetaBodyData.duration}s ︱🎬 by (@${requestClipMetaBodyData.creator_name})">
           `}
           <meta property="og:type" content="video">
-          <meta property="og:video" content="${escapeString(process.env.S3_STORAGE_CLIPS_WEB_ENDPOINT + destinationObject)}">
-          <meta property="og:video:secure_url" content="${escapeString(process.env.S3_STORAGE_CLIPS_WEB_ENDPOINT + destinationObject)}">
+          <meta property="og:video" content="${storageWebLink}">
+          <meta property="og:video:secure_url" content="${storageWebLink}">
           <meta property="og:video:type" content="video/mp4">
           <meta http-equiv='refresh' content='0; URL="${'https://clips.twitch.tv/' + clipId}"'>
           
