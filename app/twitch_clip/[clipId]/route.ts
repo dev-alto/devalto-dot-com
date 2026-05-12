@@ -43,7 +43,7 @@ export async function GET(
   const stripped = searchParams.get('stripped')
 
   // first, verify if we have a valid access token to query API with
-  const bmark_1 = performance.now()
+  const timer_startTimestamp = performance.now()
 
   const validationResponse = await fetch('https://id.twitch.tv/oauth2/validate', {
     headers: [['Authorization', `Bearer ${currentTwitchAccessToken}`]]
@@ -90,9 +90,12 @@ export async function GET(
   const requestClipMetaBody = await requestClipMetaData.json()
   const requestClipMetaBodyData = requestClipMetaBody.data[0]
 
-  const expectedObjectClipName = `${clipId}.mp4`
+  const expectedObjectClipName = `${clipId}-1.mp4`
 
   let queryS3Error = ''
+
+  console.log('timer_startTimestamp "token validation + query clip": ' + (performance.now() - timer_startTimestamp))
+  const timer_startQueryClipObject = performance.now()
 
   // attempt promise query to get item from bucket; will throw NoSuchKey S3Error if not foun.
   // at that point we can start the process of importing this new missing clip object to the store.
@@ -107,7 +110,7 @@ export async function GET(
       return
     }
 
-    console.log('New clip detected, strating process to fetch and add to storage bucket.')
+    console.log('New clip detected, strating process to fetch and add it to storage bucket.')
 
     const requestGraphQClipMetaResponse = await fetch('https://gql.twitch.tv/gql', {
       method: 'POST',
@@ -129,50 +132,46 @@ export async function GET(
         },
       ])
     })
-
-    console.log('b2: ' + (performance.now() - bmark_1))
     
     if (!requestGraphQClipMetaResponse.ok) {
         return Response.json( { error: { message: 'Could not query clip information: ' + requestGraphQClipMetaResponse.statusText + ' - the API request to Twitch seems to have errored.' }} )
     }
 
-    const requestGraphpQClipMetaBody = await requestGraphQClipMetaResponse.json()
+    const requestGQLClipMetaBody = await requestGraphQClipMetaResponse.json()
 
     // console.log('helios clip data body:')
     // console.log(JSON.stringify(requestClipMetaBody, null, 4))
 
     // console.log('graphql data body:')
-    // console.log(JSON.stringify(requestGraphpQClipMetaBody, null, 4))
+    // console.log(JSON.stringify(requestGQLClipMetaBody, null, 4))
 
-    if (!requestGraphpQClipMetaBody[0].data?.clip) {
-      return Response.json( { error: { message: `Could not query clip information. The provided clipId, "${clipId}" is likely invalid.` }} )
-    }
-
-    console.log('b3: ' + (performance.now() - bmark_1))
-
-    const clipVideoPlaybackData = requestGraphpQClipMetaBody[0].data.clip
+    const clipVideoPlaybackData = requestGQLClipMetaBody[0].data.clip
 
     const baseVideoURL = clipVideoPlaybackData.videoQualities[0].sourceURL
-    console.log(baseVideoURL)
 
     const playbackAccessToken = clipVideoPlaybackData.playbackAccessToken
-    console.log(playbackAccessToken)
 
     const authorizedVideoURL = `${baseVideoURL}?sig=${playbackAccessToken.signature}&token=${encodeURI(playbackAccessToken.value)}`
-    console.log(authorizedVideoURL)
+
+    console.log('timer_startQueryClipObject: ' + (performance.now() - timer_startQueryClipObject))
+    const timer_startFetchAndImportToStore = performance.now()
 
     const twitchMediaClipFile = await fetch(authorizedVideoURL)
 
     const twitchMediaClipBuffer = Buffer.from(await twitchMediaClipFile.arrayBuffer())
 
-    console.log('b4: ' + (performance.now() - bmark_1))
+    console.log('timer_startFetchAndImportToStore "initial fetch and to buffer": ' + (performance.now() - timer_startFetchAndImportToStore))
 
-    await minioClient.putObject(CLIPS_BUCKET_NAME, expectedObjectClipName, twitchMediaClipBuffer, twitchMediaClipBuffer.byteLength)
+    minioClient.putObject(CLIPS_BUCKET_NAME, expectedObjectClipName, twitchMediaClipBuffer, twitchMediaClipBuffer.byteLength).then(() => {
+        console.log('timer_startFetchAndImportToStore "putObject complete": ' + (performance.now() - timer_startFetchAndImportToStore))
+    })
   })
 
   if (queriedClipObject) {
     console.log('Clip already found in twitch-clips bucket.')
   }
+
+  console.log('timer_startFetchAndImportToStore "total": ' + (performance.now() - timer_startQueryClipObject))
 
   if (queryS3Error) {
       return new NextResponse(
@@ -196,7 +195,7 @@ export async function GET(
 
   const storageWebLink = escapeString(process.env.S3_STORAGE_CLIPS_WEB_ENDPOINT + expectedObjectClipName)
 
-  console.log('b6: ' + (performance.now() - bmark_1))
+  console.log('total: ' + (performance.now() - timer_startTimestamp))
 
   return new NextResponse(
     `
