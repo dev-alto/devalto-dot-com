@@ -29,8 +29,6 @@ const escapeString = function(string: string) {
     .replace(/'/g, '&#39;')
 }
 
-
-
 let currentTwitchAccessToken = ''
 
 export async function GET(
@@ -92,21 +90,21 @@ export async function GET(
 
   const expectedObjectClipName = `${clipId}-1.mp4`
 
-  let queryS3Error = ''
+  let queryClipMediaError = ''
 
   console.log('timer_startTimestamp "token validation + query clip": ' + (performance.now() - timer_startTimestamp))
-  const timer_startQueryClipObject = performance.now()
+  const timer_queryClipObject = performance.now()
 
   // attempt promise query to get item from bucket; will throw NoSuchKey S3Error if not foun.
   // at that point we can start the process of importing this new missing clip object to the store.
   const queriedClipObject = await minioClient.getObject(CLIPS_BUCKET_NAME, expectedObjectClipName).catch(async (err: unknown) => {
     if (!(err instanceof S3Error)) {
-      queryS3Error = `Encountered non-S3 error: ${err}`
+      queryClipMediaError = `Encountered non-S3 error: ${err}`
       return
     }
 
     if (err.code !== 'NoSuchKey') {
-      queryS3Error = `Encountered S3 error: ${err}`
+      queryClipMediaError = `Encountered S3 error: ${err}`
       return
     }
 
@@ -134,46 +132,40 @@ export async function GET(
     })
     
     if (!requestGraphQClipMetaResponse.ok) {
-        return Response.json( { error: { message: 'Could not query clip information: ' + requestGraphQClipMetaResponse.statusText + ' - the API request to Twitch seems to have errored.' }} )
+      queryClipMediaError = 'Could not query clip information: ' + requestGraphQClipMetaResponse.statusText + ' - the API request to Twitch seems to have returned an error.'
+      return
     }
 
     const requestGQLClipMetaBody = await requestGraphQClipMetaResponse.json()
 
-    // console.log('helios clip data body:')
-    // console.log(JSON.stringify(requestClipMetaBody, null, 4))
-
-    // console.log('graphql data body:')
-    // console.log(JSON.stringify(requestGQLClipMetaBody, null, 4))
-
     const clipVideoPlaybackData = requestGQLClipMetaBody[0].data.clip
-
-    const baseVideoURL = clipVideoPlaybackData.videoQualities[0].sourceURL
 
     const playbackAccessToken = clipVideoPlaybackData.playbackAccessToken
 
-    const authorizedVideoURL = `${baseVideoURL}?sig=${playbackAccessToken.signature}&token=${encodeURI(playbackAccessToken.value)}`
+    const authorizedVideoURL = `${clipVideoPlaybackData.videoQualities[0].sourceURL}?sig=${playbackAccessToken.signature}&token=${encodeURIComponent(playbackAccessToken.value)}`
 
-    console.log('timer_startQueryClipObject: ' + (performance.now() - timer_startQueryClipObject))
-    const timer_startFetchAndImportToStore = performance.now()
+    console.log('timer_queryClipObject "initial qgl query": ' + (performance.now() - timer_queryClipObject))
+    const timer_fetchAndImportToStore = performance.now()
 
     const twitchMediaClipFile = await fetch(authorizedVideoURL)
 
     const twitchMediaClipBuffer = Buffer.from(await twitchMediaClipFile.arrayBuffer())
 
-    console.log('timer_startFetchAndImportToStore "initial fetch and to buffer": ' + (performance.now() - timer_startFetchAndImportToStore))
+    console.log('timer_fetchAndImportToStore "initial fetch and to buffer": ' + (performance.now() - timer_fetchAndImportToStore))
+    const timer_startPutObject = performance.now()
 
-    minioClient.putObject(CLIPS_BUCKET_NAME, expectedObjectClipName, twitchMediaClipBuffer, twitchMediaClipBuffer.byteLength).then(() => {
-        console.log('timer_startFetchAndImportToStore "putObject complete": ' + (performance.now() - timer_startFetchAndImportToStore))
-    })
+    await minioClient.putObject(CLIPS_BUCKET_NAME, expectedObjectClipName, twitchMediaClipBuffer, twitchMediaClipBuffer.byteLength)
+    
+    console.log('timer_fetchAndImportToStore "putObject complete": ' + (performance.now() - timer_startPutObject))
   })
 
   if (queriedClipObject) {
     console.log('Clip already found in twitch-clips bucket.')
   }
 
-  console.log('timer_startFetchAndImportToStore "total": ' + (performance.now() - timer_startQueryClipObject))
+  console.log('timer_queryClipObject "total": ' + (performance.now() - timer_queryClipObject))
 
-  if (queryS3Error) {
+  if (queryClipMediaError) {
       return new NextResponse(
       `
         <html>
@@ -195,7 +187,7 @@ export async function GET(
 
   const storageWebLink = escapeString(process.env.S3_STORAGE_CLIPS_WEB_ENDPOINT + expectedObjectClipName)
 
-  console.log('total: ' + (performance.now() - timer_startTimestamp))
+  console.log('= total: ' + (performance.now() - timer_startTimestamp))
 
   return new NextResponse(
     `
