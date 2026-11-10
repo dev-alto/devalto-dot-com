@@ -79,8 +79,11 @@ export async function GET(
     headers: [['Client-Id', process.env.TWITCH_CLIENT_ID as string ], ['Authorization', `Bearer ${currentTwitchAccessToken}`]]
   })
 
+  const requestClipMetaBody = await requestClipMetaData.json()
+
   // check if requesting clip if Twitch succeeds; validating if clipId and therefore clip is valid
-  if (!requestClipMetaData.ok) {
+  if (!requestClipMetaData.ok || requestClipMetaBody.data.length === 0) {
+    console.log(`The provided clipId, '${clipId}', could not be indexed from Twitch or is invalid.`)
     return new NextResponse(
       `
         <html>
@@ -99,7 +102,7 @@ export async function GET(
     )
   }
 
-  const requestClipMetaBody = await requestClipMetaData.json()
+  
   const requestClipMetaBodyData = requestClipMetaBody.data[0]
 
   const expectedObjectClipName = `${clipId}.mp4`
